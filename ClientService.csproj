@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <AssemblyName>ClientService</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <OutputType>Exe</OutputType>
+    <UseWindowsForms>True</UseWindowsForms>
+    <TargetFramework>net452</TargetFramework>
+    <Prefer32Bit>True</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup />
+  <ItemGroup />
+  <ItemGroup>
+    <Reference Include="log4net">
+      <HintPath>\\filesrv\DEV\VERSIONS\Protel\Passport Scanner Socket\ver. 1.0.10.6\Client\DocumentScanner\log4net.dll</HintPath>
+    </Reference>
+    <Reference Include="System.ServiceProcess" />
+    <Reference Include="MrzParser">
+      <HintPath>\\filesrv\DEV\VERSIONS\Protel\Passport Scanner Socket\ver. 1.0.10.6\Client\DocumentScanner\MrzParser.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Net.Http.Formatting">
+      <HintPath>\\filesrv\DEV\VERSIONS\Protel\Passport Scanner Socket\ver. 1.0.10.6\Client\DocumentScanner\System.Net.Http.Formatting.dll</HintPath>
+    </Reference>
+    <Reference Include="HidApiDotNet">
+      <HintPath>\\filesrv\DEV\VERSIONS\Protel\Passport Scanner Socket\ver. 1.0.10.6\Client\DocumentScanner\HidApiDotNet.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>\\filesrv\DEV\VERSIONS\Protel\Passport Scanner Socket\ver. 1.0.10.6\Client\DocumentScanner\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Core" />
+  </ItemGroup>
+</Project>
