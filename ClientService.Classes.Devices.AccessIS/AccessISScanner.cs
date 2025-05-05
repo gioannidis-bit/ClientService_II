@@ -26,19 +26,18 @@ public class AccessISScanner : IScanner
         device.SetText = Send;
     }
 
-    // ClientService.Classes.Devices.AccessIS/AccessISScanner.cs
-    // Add to AccessISScanner.cs
+   
     public bool IsConnected()
     {
         try
         {
-            // Basic check - is the device object initialized?
+            // Βασικός έλεγχος - είναι το αντικείμενο device αρχικοποιημένο;
             if (device == null)
             {
                 return false;
             }
 
-            // Use the device's method to check connection
+            // Χρήση της μεθόδου της συσκευής για έλεγχο σύνδεσης
             return device.IsDeviceConnected();
         }
         catch (Exception ex)

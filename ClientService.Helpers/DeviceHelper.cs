@@ -1,5 +1,6 @@
 ﻿// ClientService.Helpers/DeviceHelper.cs
 using System;
+using System.Management;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
@@ -10,34 +11,105 @@ namespace ClientService.Helpers
 {
     public class DeviceHelper
     {
-        private static readonly ILog logger = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static ManagementEventWatcher insertWatcher;
+        private static ManagementEventWatcher removeWatcher;
 
-        // Στο DeviceHelper.cs, προσθέστε:
-        public static bool IsScannerConnected(string deviceId = "VID_08FF") // Αλλάξτε το VID_08FF με το αναγνωριστικό του δικού σας scanner
+
+        public static void StartDeviceWatcher()
         {
             try
             {
-                List<string> devices = GetConnectedUsbDevices();
+                // Δημιουργία ενός watcher για σύνδεση συσκευών
+                WqlEventQuery insertQuery = new WqlEventQuery("SELECT * FROM __InstanceCreationEvent WITHIN 2 WHERE TargetInstance ISA 'Win32_USBHub'");
+                insertWatcher = new ManagementEventWatcher(insertQuery);
+                insertWatcher.EventArrived += new EventArrivedEventHandler(DeviceInsertedEvent);
+                insertWatcher.Start();
 
-                // Έλεγχος αν κάποια από τις συνδεδεμένες συσκευές αντιστοιχεί στο scanner
-                foreach (string device in devices)
-                {
-                    if (device.Contains(deviceId))
-                    {
-                        return true;
-                    }
-                }
+                // Δημιουργία ενός watcher για αποσύνδεση συσκευών
+                WqlEventQuery removeQuery = new WqlEventQuery("SELECT * FROM __InstanceDeletionEvent WITHIN 2 WHERE TargetInstance ISA 'Win32_USBHub'");
+                removeWatcher = new ManagementEventWatcher(removeQuery);
+                removeWatcher.EventArrived += new EventArrivedEventHandler(DeviceRemovedEvent);
+                removeWatcher.Start();
 
-                return false;
+                logger.Info("USB device monitoring started");
             }
             catch (Exception ex)
             {
-                logger.Error($"Error checking scanner connection: {ex.Message}");
-                return false;
+                logger.Error($"Failed to start USB monitoring: {ex.Message}");
+            }
+        }
+
+        private static void DeviceInsertedEvent(object sender, EventArrivedEventArgs e)
+        {
+            try
+            {
+                logger.Info("USB device connected - checking if it's our scanner");
+
+                // Καθυστέρηση για να σταθεροποιηθεί η σύνδεση
+                System.Threading.Thread.Sleep(3000);
+
+                // Έλεγχος αν η συσκευή είναι ο scanner μας
+                if (IsScannerConnected())
+                {
+                    logger.Info("Scanner reconnected - reinitializing");
+
+                    // Επανεκκίνηση του scanner
+                    Service.CompleteDeviceReinitialization();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error handling USB device insertion: {ex.Message}");
+            }
+        }
+
+        private static void DeviceRemovedEvent(object sender, EventArrivedEventArgs e)
+        {
+            try
+            {
+                logger.Info("USB device removed - checking if scanner is still connected");
+
+                // Έλεγχος αν ο scanner παραμένει συνδεδεμένος
+                if (!IsScannerConnected())
+                {
+                    logger.Warn("Scanner disconnected");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error handling USB device removal: {ex.Message}");
+            }
+        }
+
+        public static void StopDeviceWatcher()
+        {
+            try
+            {
+                if (insertWatcher != null)
+                {
+                    insertWatcher.Stop();
+                    insertWatcher.Dispose();
+                    insertWatcher = null;
+                }
+
+                if (removeWatcher != null)
+                {
+                    removeWatcher.Stop();
+                    removeWatcher.Dispose();
+                    removeWatcher = null;
+                }
+
+                logger.Info("USB device monitoring stopped");
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error stopping USB monitoring: {ex.Message}");
             }
         }
 
 
+
+        private static readonly ILog logger = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Ελέγχει αν υπάρχουν διαθέσιμες συσκευές USB
@@ -110,7 +182,6 @@ namespace ClientService.Helpers
                         {
                             string deviceInfo = line.Trim();
                             devices.Add(deviceInfo);
-                            logger.Debug($"Found USB device: {deviceInfo}");
                         }
                     }
                 }
@@ -126,52 +197,30 @@ namespace ClientService.Helpers
         }
 
         /// <summary>
-        /// Προσπαθεί να επαναφέρει τις USB συσκευές
+        /// Ελέγχει αν ο scanner είναι συνδεδεμένος με βάση το αναγνωριστικό του
         /// </summary>
-        /// <returns>True αν η επαναφορά ήταν επιτυχής, αλλιώς False</returns>
-        public static bool ResetUsbDevices()
+        /// <param name="deviceId">Το αναγνωριστικό του scanner (προεπιλογή: VID_08FF για AccessIS)</param>
+        /// <returns>True αν ο scanner είναι συνδεδεμένος, αλλιώς False</returns>
+        public static bool IsScannerConnected(string deviceId = "VID_08FF") // Προσαρμόστε το VID ανάλογα με τον scanner σας
         {
             try
             {
-                logger.Info("Attempting to reset USB devices");
-
-                // Χρήση taskkill για να τερματίσουμε τυχόν διεργασίες που μπλοκάρουν USB
-                try
-                {
-                    ProcessStartInfo psiTaskkill = new ProcessStartInfo
-                    {
-                        FileName = "taskkill",
-                        Arguments = "/F /IM winusb.exe /IM usbhub.exe /IM usbaudio.exe 2>nul",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        CreateNoWindow = true
-                    };
-
-                    Process taskkillProcess = Process.Start(psiTaskkill);
-                    string taskkillOutput = taskkillProcess.StandardOutput.ReadToEnd();
-                    taskkillProcess.WaitForExit();
-
-                    logger.Info($"Taskkill output: {taskkillOutput}");
-                }
-                catch (Exception ex)
-                {
-                    logger.Error($"Error using taskkill: {ex.Message}", ex);
-                }
-
-                // Σύντομη αναμονή για να επιτρέψουμε στο σύστημα να ανιχνεύσει ξανά τις συσκευές
-                Thread.Sleep(2000);
-
-                // Έλεγχος αν έχουμε συσκευές USB μετά την επαναφορά
                 List<string> devices = GetConnectedUsbDevices();
-                bool hasDevicesAfterReset = devices.Count > 0;
 
-                logger.Info($"After reset: Found {devices.Count} USB devices");
+                // Έλεγχος αν κάποια από τις συνδεδεμένες συσκευές αντιστοιχεί στο scanner
+                foreach (string device in devices)
+                {
+                    if (device.Contains(deviceId))
+                    {
+                        return true;
+                    }
+                }
 
-                return hasDevicesAfterReset;
+                return false;
             }
             catch (Exception ex)
             {
-                logger.Error($"Error resetting USB devices: {ex.Message}", ex);
+                logger.Error($"Error checking scanner connection: {ex.Message}", ex);
                 return false;
             }
         }

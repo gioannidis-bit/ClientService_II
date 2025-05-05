@@ -1,4 +1,4 @@
-// ClientService.Helpers/Service.cs
+// Τροποποίηση του Service.cs
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -6,7 +6,6 @@ using System.IO;
 using System.Reflection;
 using System.ServiceProcess;
 using System.Threading;
-using ClientService.Classes.Devices.AccessIS;
 using ClientService.Classes.Factories;
 using ClientService.Classes.Interfaces;
 using ClientService.Models.Base;
@@ -14,22 +13,22 @@ using log4net;
 
 namespace ClientService.Helpers
 {
-    // ClientService.Helpers/Service.cs - τροποποίηση
     internal class Service : ServiceBase
     {
         private static readonly ILog logger = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private string ExecName;
 
-        // Αλλαγή από private σε public static
         public static string SERVICENAME;
 
         public static ConfigurationModel config;
 
         public static IScanner scanner;
 
-        // Προσθήκη του watchdog
-        public static ScannerWatchdog watchdog;
+        private Timer usbMonitorTimer;
+        private Timer flagCheckTimer;
+
+        private readonly string reconnectFlagPath = @"C:\ProgramData\DocumentScanner\reconnect.flag";
 
         private IContainer components;
 
@@ -40,12 +39,12 @@ namespace ClientService.Helpers
             if (!string.IsNullOrEmpty(exName))
             {
                 this.ExecName = ExecName;
-                Service.SERVICENAME = SERVICENAME; // Ενημέρωση του static πεδίου
+                Service.SERVICENAME = SERVICENAME;
             }
             base.ServiceName = SERVICENAME;
         }
 
-         protected override void OnStart(string[] args)
+        protected override void OnStart(string[] args)
         {
             Start(args);
         }
@@ -55,19 +54,94 @@ namespace ClientService.Helpers
             Stop();
         }
 
-        private System.Threading.Timer usbMonitorTimer;
-
-
         public void Start(string[] args)
         {
             logger.Info("Initializing Protel Document Scanner");
             InitializeConfiguration();
             InitializeDevice();
 
-            // Έναρξη παρακολούθησης USB συσκευών κάθε 10 δευτερόλεπτα
-            usbMonitorTimer = new System.Threading.Timer(CheckScannerConnection, null, 10000, 10000);
+            // Δημιουργία φακέλων για τα flag files
+            try
+            {
+                string flagsPath = Path.GetDirectoryName(reconnectFlagPath);
+                if (!Directory.Exists(flagsPath))
+                    Directory.CreateDirectory(flagsPath);
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error creating flags directory: {ex.Message}");
+            }
 
-            logger.Info("Scanner monitoring system initialized");
+            // Εκκίνηση ενός timer που θα ελέγχει τη ύπαρξη του flag file
+            // για χειροκίνητη επανεκκίνηση
+            flagCheckTimer = new Timer(CheckForManualReconnect, null, 5000, 5000);
+
+            // Εκκίνηση ενός timer που θα ελέγχει περιοδικά αν ο scanner είναι συνδεδεμένος
+            usbMonitorTimer = new Timer(CheckScannerConnection, null, 10000, 10000);
+           
+            logger.Info("Scanner manual reconnect system initialized");
+
+            DeviceHelper.StartDeviceWatcher();
+        }
+
+        public new void Stop()
+        {
+            // Σταματήστε τους timers
+            if (usbMonitorTimer != null)
+            {
+                usbMonitorTimer.Dispose();
+                usbMonitorTimer = null;
+            }
+
+            if (flagCheckTimer != null)
+            {
+                flagCheckTimer.Dispose();
+                flagCheckTimer = null;
+            }
+
+            if (!Environment.UserInteractive)
+            {
+                logger.Info("Application stopped as Windows Service");
+            }
+            else
+            {
+                logger.Info("Application closed as Console Application");
+            }
+            DeviceHelper.StopDeviceWatcher();
+        }
+
+        public static void InitializeConfiguration()
+        {
+            logger.Info("Initializing Configuration");
+            config = new ConfigurationHelper().GetConfiguration();
+        }
+
+        public static void InitializeDevice()
+        {
+            logger.Info("Initializing Device");
+
+            // Έλεγχος για USB συσκευές
+            bool usbDevicesAvailable = false;
+            try
+            {
+                usbDevicesAvailable = DeviceHelper.AreUsbDevicesAvailable();
+                logger.Info($"USB devices available: {usbDevicesAvailable}");
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error checking USB devices: {ex.Message}");
+            }
+
+            // Δημιουργία του scanner και σύνδεση
+            try
+            {
+                scanner = new ConcreteScannerFactory().GetScanner(config);
+                scanner.Connect();
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Error initializing scanner: {ex.Message}");
+            }
         }
 
         private void CheckScannerConnection(object state)
@@ -79,15 +153,24 @@ namespace ClientService.Helpers
 
                 if (scanner != null)
                 {
-                    // Χρήση της νέας μεθόδου IsConnected
-                    isConnected = ((AccessISScanner)scanner).IsConnected();
+                    // Έλεγχος κατάστασης σύνδεσης
+                    if (scanner is ClientService.Classes.Devices.AccessIS.AccessISScanner)
+                    {
+                        isConnected = ((ClientService.Classes.Devices.AccessIS.AccessISScanner)scanner).IsConnected();
+                    }
+                    else
+                    {
+                        // Εναλλακτικός έλεγχος αν δεν είναι AccessIS scanner
+                        isConnected = DeviceHelper.IsScannerConnected();
+                    }
                 }
 
                 if (!isConnected)
                 {
                     logger.Warn("Scanner disconnected - attempting to reinitialize");
-                    // Επανεκκίνηση των συσκευών
-                    InitializeDevice();
+
+                    // Πλήρης επαναρχικοποίηση
+                    CompleteDeviceReinitialization();
                 }
             }
             catch (Exception ex)
@@ -96,197 +179,71 @@ namespace ClientService.Helpers
             }
         }
 
-        // Νέα μέθοδος για έλεγχο επανεκκίνησης
-        private void CheckForServiceRestart()
+        private void CheckForManualReconnect(object state)
         {
             try
             {
-                string restartFlagPath = System.IO.Path.Combine(
-                    System.IO.Path.GetDirectoryName(System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                        "DocumentScanner", "reconnect.flag")),
-                    "restart_occurred.flag");
-
-                if (System.IO.File.Exists(restartFlagPath))
+                if (File.Exists(reconnectFlagPath))
                 {
-                    string restartTime = System.IO.File.ReadAllText(restartFlagPath);
-                    logger.Info($"Service was automatically restarted at {restartTime}");
-
-                    // Διαγραφή του flag αρχείου
+                    logger.Info("Manual reconnect flag detected");
                     try
                     {
-                        System.IO.File.Delete(restartFlagPath);
+                        File.Delete(reconnectFlagPath);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Αγνόηση σφαλμάτων
+                        logger.Error($"Failed to delete reconnect flag: {ex.Message}");
                     }
+
+                    // Πλήρης επαναρχικοποίηση της συσκευής
+                    CompleteDeviceReinitialization();
                 }
             }
             catch (Exception ex)
             {
-                logger.Error($"Error checking for service restart: {ex.Message}", ex);
+                logger.Error($"Error in flag check timer: {ex.Message}");
             }
         }
 
-        public new void Stop()
-        {
-            // Τερματισμός του watchdog
-            if (watchdog != null)
-            {
-                logger.Info("Disposing scanner watchdog");
-                watchdog.Dispose();
-                watchdog = null;
-            }
-
-            if (!Environment.UserInteractive)
-            {
-                logger.Info("Application stopped as Windows Service");
-            }
-            else
-            {
-                logger.Info("Application closed as Console Application");
-            }
-        }
-
-        public static void InitializeConfiguration()
-        {
-            logger.Info("Initializing Configuration");
-            config = new ConfigurationHelper().GetConfiguration();
-        }
-
-        // Τροποποίηση της μεθόδου InitializeDevice στο Service.cs
-        public static void InitializeDevice()
-        {
-            logger.Info("Initializing Device");
-
-            try
-            {
-                // Έλεγχος για USB συσκευές
-                bool usbDevicesAvailable = false;
-                try
-                {
-                    usbDevicesAvailable = DeviceHelper.AreUsbDevicesAvailable();
-                    logger.Info($"USB devices available: {usbDevicesAvailable}");
-                }
-                catch (Exception usbEx)
-                {
-                    logger.Error($"Error checking USB devices: {usbEx.Message}");
-                }
-
-                // Δημιουργία του scanner με safe try/catch
-                try
-                {
-                    scanner = new ConcreteScannerFactory().GetScanner(config);
-                }
-                catch (Exception scannerEx)
-                {
-                    logger.Error($"Error creating scanner: {scannerEx.Message}");
-                    throw; // Προώθηση για τερματισμό της διαδικασίας
-                }
-
-                // Προσπάθεια σύνδεσης με safe try/catch
-                try
-                {
-                    scanner.Connect();
-                }
-                catch (Exception connectEx)
-                {
-                    logger.Error($"Error connecting scanner: {connectEx.Message}");
-                    throw; // Προώθηση για τερματισμό της διαδικασίας
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.Error($"Critical error initializing device: {ex.Message}", ex);
-                throw; // Προώθηση της εξαίρεσης για τερματισμό της διαδικασίας
-            }
-        }
-
-        // Προσθήκη στο Service.cs
-        // Τροποποίηση της μεθόδου CompleteDeviceReinitialization στο Service.cs
         public static void CompleteDeviceReinitialization()
         {
             logger.Info("Performing complete device reinitialization");
 
             try
             {
-                // Απελευθέρωση των πόρων του τρέχοντος scanner
+                // Απελευθέρωση του τρέχοντος scanner
                 if (scanner != null)
                 {
                     try
                     {
-                        logger.Info("Disconnecting existing scanner");
                         scanner.Disconnect();
                     }
-                    catch (Exception disconnectEx)
+                    catch (Exception ex)
                     {
-                        logger.Error($"Error disconnecting scanner: {disconnectEx.Message}");
-                        // Συνεχίζουμε παρά το σφάλμα
+                        logger.Error($"Error disconnecting scanner: {ex.Message}");
                     }
 
-                    // Θέτουμε σε null το scanner για να βοηθήσουμε το GC
+                    // Ορίζουμε το scanner σε null για να βοηθήσουμε το GC
                     scanner = null;
                 }
 
-                // Ειδικός χειρισμός για GC ώστε να απελευθερωθούν οι πόροι
-                try
-                {
-                    logger.Info("Forcing resource cleanup");
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    GC.Collect();
-                }
-                catch (Exception gcEx)
-                {
-                    logger.Error($"Error during garbage collection: {gcEx.Message}");
-                    // Συνεχίζουμε παρά το σφάλμα
-                }
+                // Εκτέλεση GC για να καθαρίσουμε τους πόρους
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
 
-                // Επιπρόσθετη καθυστέρηση για να είμαστε σίγουροι ότι οι πόροι απελευθερώθηκαν
+                // Καθυστέρηση για σταθεροποίηση
                 Thread.Sleep(2000);
 
-                // Εκ νέου δημιουργία του scanner με τον ίδιο τρόπο που γίνεται κατά την εκκίνηση
-                try
-                {
-                    logger.Info("Creating new scanner instance");
-                    scanner = new ConcreteScannerFactory().GetScanner(config);
+                // Δημιουργία νέου scanner
+                logger.Info("Creating new scanner instance");
+                InitializeDevice();
 
-                    // Σύνδεση με τη συσκευή
-                    logger.Info("Connecting to device");
-                    scanner.Connect();
-
-                    logger.Info("Device reinitialization completed successfully");
-                }
-                catch (Exception initEx)
-                {
-                    logger.Error($"Error during scanner initialization: {initEx.Message}");
-                    throw; // Προώθηση της εξαίρεσης για περαιτέρω διαχείριση
-                }
+                logger.Info("Device reinitialization completed successfully");
             }
             catch (Exception ex)
             {
                 logger.Error($"Error during device reinitialization: {ex.Message}", ex);
-                throw; // Προώθηση της εξαίρεσης για περαιτέρω διαχείριση
-            }
-        }
-
-
-        // Προσθήκη μεθόδου για επανασύνδεση του scanner
-        public static void ForceReconnectScanner()
-        {
-            try
-            {
-                logger.Info("Manual scanner reconnection requested");
-                scanner.Disconnect();
-                System.Threading.Thread.Sleep(1000);
-                scanner.Connect();
-                watchdog?.NotifyDataReceived();
-                logger.Info("Manual scanner reconnection completed");
-            }
-            catch (Exception ex)
-            {
-                logger.Error($"Error during manual scanner reconnection: {ex.Message}", ex);
             }
         }
 

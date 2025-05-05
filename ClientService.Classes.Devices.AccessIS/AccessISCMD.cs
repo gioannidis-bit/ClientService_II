@@ -1,9 +1,8 @@
-// ClientService.Classes.Devices.AccessIS/AccessISCMD.cs
-using System;
+ο»Ώusing System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using ClientService.Helpers;
+using ClientService.Helpers;   // β† for Service.watchdog
 using log4net;
 
 namespace ClientService.Classes.Devices.AccessIS
@@ -38,33 +37,35 @@ namespace ClientService.Classes.Devices.AccessIS
 
         public Func<string, string> SetText { get; set; }
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, SetLastError = true)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi, SetLastError = true)]
         private static extern void initialiseMsr(bool managedCode);
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private static extern void msrRelease();
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private static extern bool enableMSR();
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private static extern bool disableMSR();
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private static extern PacketType getPacketType();
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         [return: MarshalAs(UnmanagedType.LPStr)]
         private static extern string getDeviceName();
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, CharSet = CharSet.Ansi)]
         private static extern int getMrzFailureStatus();
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall)]
         private static extern bool registerMSRCallback(msrDelegate Callback, ref uint Parameter);
 
-        [DllImport("Access_IS_MSR.dll", CallingConvention = CallingConvention.StdCall, SetLastError = true)]
+        [DllImport(DLL_LOCATION, CallingConvention = CallingConvention.StdCall, SetLastError = true)]
         private static extern bool registerMSRConnectionCallback(msrConnectionDelegate Callback, ref uint Parameter);
+
+    
 
 
 
@@ -77,8 +78,8 @@ namespace ClientService.Classes.Devices.AccessIS
             }
             catch (Exception ex)
             {
-                // If an exception occurs when trying to get the device name,
-                // the device is likely not connected
+                // Ξ‘Ξ½ ΟƒΟ…ΞΌΞ²ΞµΞ― ΞµΞΎΞ±Ξ―ΟΞµΟƒΞ· ΞΊΞ±Ο„Ξ¬ Ο„Ξ·Ξ½ ΞΊΞ»Ξ®ΟƒΞ· Ο„ΞΏΟ… getDeviceName, 
+                // Ξ· ΟƒΟ…ΟƒΞΊΞµΟ…Ξ® Ο€ΞΉΞΈΞ±Ξ½ΟΟ„Ξ±Ο„Ξ± Ξ΄ΞµΞ½ ΞµΞ―Ξ½Ξ±ΞΉ ΟƒΟ…Ξ½Ξ΄ΞµΞ΄ΞµΞΌΞ­Ξ½Ξ·
                 return false;
             }
         }
@@ -111,10 +112,10 @@ namespace ClientService.Classes.Devices.AccessIS
             msrDataConnection = null;
         }
 
-        // ClientService.Classes.Devices.AccessIS/AccessISCMD.cs - στη μέθοδο MsrCallback
-        // Τροποποίηση στην κλάση AccessISCMD.cs
-        // Ασφαλέστερη έκδοση του MsrCallback στο AccessISCMD.cs
-        // Τροποποίηση του MsrCallback στο AccessISCMD.cs
+        // ClientService.Classes.Devices.AccessIS/AccessISCMD.cs - ΟƒΟ„Ξ· ΞΌΞ­ΞΈΞΏΞ΄ΞΏ MsrCallback
+        // Ξ¤ΟΞΏΟ€ΞΏΟ€ΞΏΞ―Ξ·ΟƒΞ· ΟƒΟ„Ξ·Ξ½ ΞΊΞ»Ξ¬ΟƒΞ· AccessISCMD.cs
+        // Ξ‘ΟƒΟ†Ξ±Ξ»Ξ­ΟƒΟ„ΞµΟΞ· Ξ­ΞΊΞ΄ΞΏΟƒΞ· Ο„ΞΏΟ… MsrCallback ΟƒΟ„ΞΏ AccessISCMD.cs
+        // Ξ¤ΟΞΏΟ€ΞΏΟ€ΞΏΞ―Ξ·ΟƒΞ· Ο„ΞΏΟ… MsrCallback ΟƒΟ„ΞΏ AccessISCMD.cs
         private void MsrCallback(ref uint Parameter, [MarshalAs(UnmanagedType.LPStr)] StringBuilder data, int dataSize)
         {
             try
@@ -125,7 +126,7 @@ namespace ClientService.Classes.Devices.AccessIS
                     return;
                 }
 
-                // Δημιουργία αντιγράφου των δεδομένων για ασφάλεια
+                // Ξ”Ξ·ΞΌΞΉΞΏΟ…ΟΞ³Ξ―Ξ± Ξ±Ξ½Ο„ΞΉΞ³ΟΞ¬Ο†ΞΏΟ… Ο„Ο‰Ξ½ Ξ΄ΞµΞ΄ΞΏΞΌΞ­Ξ½Ο‰Ξ½ Ξ³ΞΉΞ± Ξ±ΟƒΟ†Ξ¬Ξ»ΞµΞΉΞ±
                 string safeDataCopy = null;
                 try
                 {
@@ -139,14 +140,14 @@ namespace ClientService.Classes.Devices.AccessIS
 
                 logger.Info("AccessIS listener triggered");
 
-                // Έλεγχος για null στο callback delegate
+                // ΞΞ»ΞµΞ³Ο‡ΞΏΟ‚ Ξ³ΞΉΞ± null ΟƒΟ„ΞΏ callback delegate
                 if (SetText == null)
                 {
                     logger.Error("SetText callback is null");
                     return;
                 }
 
-                // Κλήση του callback με safe try/catch
+                // ΞΞ»Ξ®ΟƒΞ· Ο„ΞΏΟ… callback ΞΌΞµ safe try/catch
                 try
                 {
                     SetText(safeDataCopy);
