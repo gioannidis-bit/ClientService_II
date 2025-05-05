@@ -1,10 +1,10 @@
-namespace ClientService.Classes.Interfaces;
-
-public interface IScanner
+namespace ClientService.Classes.Interfaces
 {
-	int Connect();
-
-	string Send(string data);
-
-	int Disconnect();
+    public interface IScanner
+    {
+        int Connect();
+        string Send(string data);
+        int Disconnect();
+        bool IsConnected(); // Νέα μέθοδος
+    }
 }

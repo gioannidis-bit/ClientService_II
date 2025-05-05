@@ -20,7 +20,12 @@ public class Scanner : IScanner
 		throw new NotImplementedException();
 	}
 
-	public string Send(string data)
+    public bool IsConnected()
+    {
+        throw new NotImplementedException();
+    }
+
+    public string Send(string data)
 	{
 		throw new NotImplementedException();
 	}

@@ -21,7 +21,23 @@ public class MainCode
 	{
 		string exName = Process.GetCurrentProcess().ProcessName;
 		logger.Info(exName);
-		if (!string.IsNullOrEmpty(exName))
+
+        // Στη μέθοδο Main()
+        if (Debugger.IsAttached)
+        {
+            logger.Info("Application opened in Debug mode");
+            using Service service = new Service(ExecName, SERVICENAME);
+            string[] args = new string[0];
+            service.Start(args);
+
+            Console.WriteLine("Press any key to stop the service...");
+            Console.ReadKey();
+
+            service.Stop();
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(exName))
 		{
 			ExecName = exName;
 			SERVICENAME = ExecName;
@@ -117,5 +133,9 @@ public class MainCode
 		new ClientService.Helpers.ServiceInstaller().InstallService(Environment.CurrentDirectory + "\\" + ExecName + ".exe", SERVICENAME, SERVICENAME);
 		Console.WriteLine("Application installed as Windows Service succesfully and is up and runnning!\n\nPress any key to exit...");
 		Console.ReadKey(intercept: true);
+
+
+
+
 	}
 }

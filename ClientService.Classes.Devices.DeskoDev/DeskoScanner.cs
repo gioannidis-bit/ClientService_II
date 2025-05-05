@@ -26,7 +26,28 @@ public class DeskoScanner : IScanner
 		device.SetText = Send;
 	}
 
-	public int Connect()
+    // ClientService.Classes.Devices.DeskoDev/DeskoScanner.cs
+    public bool IsConnected()
+    {
+        try
+        {
+            // Έλεγχος αν το device είναι διαθέσιμο
+            if (device == null || device.device == null)
+            {
+                return false;
+            }
+
+            // Επιπλέον λογική ελέγχου αν απαιτείται
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error checking scanner connection: {ex.Message}", ex);
+            return false;
+        }
+    }
+
+    public int Connect()
 	{
 		try
 		{

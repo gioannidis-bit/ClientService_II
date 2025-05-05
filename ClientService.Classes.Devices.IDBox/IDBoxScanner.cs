@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using ClientService.Classes.Factories;
 using ClientService.Classes.Interfaces;
@@ -25,7 +26,37 @@ public class IDBoxScanner : IScanner
 		device.SetText = Send;
 	}
 
-	public int Connect()
+    // ClientService.Classes.Devices.IDBox/IDBoxScanner.cs
+    public bool IsConnected()
+    {
+        try
+        {
+            // Έλεγχος αν το device είναι διαθέσιμο
+            if (device == null)
+            {
+                return false;
+            }
+
+            // Επιπλέον λογική για έλεγχο της σειριακής θύρας
+            if (!string.IsNullOrEmpty(config.ComPort))
+            {
+                string[] availablePorts = System.IO.Ports.SerialPort.GetPortNames();
+                if (!availablePorts.Contains(config.ComPort, StringComparer.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Error checking scanner connection: {ex.Message}", ex);
+            return false;
+        }
+    }
+
+    public int Connect()
 	{
 		try
 		{
